@@ -774,6 +774,28 @@ entries:
     urls:
     - assets/node-driver/openstack-1.0.0.tgz
     version: 1.0.0
+  shell-api-demo:
+  - annotations:
+      catalog.cattle.io/certified: rancher
+      catalog.cattle.io/experimental: "true"
+      catalog.cattle.io/kube-version: '>= 1.16.0-0'
+      catalog.cattle.io/namespace: cattle-ui-plugin-system
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/permits-os: linux, windows
+      catalog.cattle.io/rancher-version: '>= 2.10.0-0'
+      catalog.cattle.io/scope: management
+      catalog.cattle.io/ui-component: plugins
+      catalog.cattle.io/ui-extensions-version: '>= 3.0.0 < 4.0.0'
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-01-08T09:55:21.785078781Z"
+    description: Shell Api demo extension
+    digest: 6414463fe81b5c176d28f1ceb76197c9def9c21e771dc06c6b89eca7b5915325
+    name: shell-api-demo
+    type: application
+    urls:
+    - assets/shell-api-demo/shell-api-demo-0.1.0.tgz
+    version: 0.1.0
   top-level-product:
   - annotations:
       catalog.cattle.io/certified: rancher
@@ -938,4 +960,4 @@ entries:
     urls:
     - assets/uk-locale/uk-locale-0.1.1.tgz
     version: 0.1.1
-generated: "2026-01-08T09:23:44.157517243Z"
+generated: "2026-01-08T09:55:21.784699716Z"
