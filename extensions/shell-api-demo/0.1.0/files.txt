@@ -1,0 +1,5 @@
+plugin/package.json
+plugin/shell-api-demo-0.1.0.umd.min.37.js
+plugin/shell-api-demo-0.1.0.umd.min.37.js.map
+plugin/shell-api-demo-0.1.0.umd.min.js
+plugin/shell-api-demo-0.1.0.umd.min.js.map
