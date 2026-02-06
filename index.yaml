@@ -876,6 +876,27 @@ entries:
     urls:
     - assets/top-level-product/top-level-product-0.1.0.tgz
     version: 0.1.0
+  traefik:
+  - annotations:
+      catalog.cattle.io/certified: rancher
+      catalog.cattle.io/kube-version: '>= 1.16.0-0'
+      catalog.cattle.io/namespace: cattle-ui-plugin-system
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/permits-os: linux, windows
+      catalog.cattle.io/rancher-version: '>= 2.10.0-0'
+      catalog.cattle.io/scope: management
+      catalog.cattle.io/ui-component: plugins
+      catalog.cattle.io/ui-extensions-version: '>= 3.0.0 < 4.0.0'
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-02-06T03:17:11.178227331Z"
+    description: Traefik IngressRoute viewer
+    digest: 29ab7942a05290d923d54e0886d6867fa78499e6e42cf8b91fe3ea592fd77f41
+    name: traefik
+    type: application
+    urls:
+    - assets/traefik/traefik-0.1.0.tgz
+    version: 0.1.0
   uk-locale:
   - annotations:
       catalog.cattle.io/certified: rancher
@@ -960,4 +981,4 @@ entries:
     urls:
     - assets/uk-locale/uk-locale-0.1.1.tgz
     version: 0.1.1
-generated: "2026-01-08T09:55:21.784699716Z"
+generated: "2026-02-06T03:17:11.177834126Z"

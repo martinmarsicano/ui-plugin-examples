@@ -1,0 +1,19 @@
+{
+  "name": "traefik",
+  "description": "Traefik IngressRoute viewer",
+  "version": "0.1.0",
+  "private": true,
+  "rancher": true,
+  "engines": {
+    "node": ">=12"
+  },
+  "devDependencies": {
+    "@vue/cli-plugin-babel": "~5.0.0",
+    "@vue/cli-service": "~5.0.0",
+    "@vue/cli-plugin-typescript": "~5.0.0"
+  },
+  "files": [
+    "**/*"
+  ],
+  "main": "traefik-0.1.0.umd.min.js"
+}
