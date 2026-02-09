@@ -121,6 +121,27 @@ entries:
     urls:
     - assets/clock/clock-0.1.0.tgz
     version: 0.1.0
+  everest:
+  - annotations:
+      catalog.cattle.io/certified: rancher
+      catalog.cattle.io/kube-version: '>= 1.16.0-0'
+      catalog.cattle.io/namespace: cattle-ui-plugin-system
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/permits-os: linux, windows
+      catalog.cattle.io/rancher-version: '>= 2.10.0-0'
+      catalog.cattle.io/scope: management
+      catalog.cattle.io/ui-component: plugins
+      catalog.cattle.io/ui-extensions-version: '>= 3.0.0 < 4.0.0'
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-02-09T21:43:36.90949951Z"
+    description: Percona Everest object viewer
+    digest: 08c18dbf72156e3352ac19f8c75abf69a07f43401dc51650d52cf68c0d6360e5
+    name: everest
+    type: application
+    urls:
+    - assets/everest/everest-0.1.0.tgz
+    version: 0.1.0
   extension-crd:
   - annotations:
       catalog.cattle.io/certified: rancher
@@ -981,4 +1002,4 @@ entries:
     urls:
     - assets/uk-locale/uk-locale-0.1.1.tgz
     version: 0.1.1
-generated: "2026-02-06T03:17:11.177834126Z"
+generated: "2026-02-09T21:43:36.908772974Z"
