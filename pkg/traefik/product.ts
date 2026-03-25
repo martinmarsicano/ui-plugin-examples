@@ -67,4 +67,15 @@ export function init($plugin: any, store: any) {
   ]);
 
   basicType([INGRESS_ROUTE, INGRESS_ROUTE_TCP], 'serviceDiscovery');
+
+  $plugin.addTab(
+    { resource: ['apps.deployment'] },
+    {
+      name:      'ingress-routes',
+      labelKey:  'traefik.tabs.ingressRoutes',
+      label:     'IngressRoutes',
+      component: () => import('./components/DeploymentIngressRoutesTab.vue'),
+      weight:    -5,
+    }
+  );
 }
