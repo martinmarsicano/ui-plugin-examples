@@ -65,7 +65,7 @@ export default {
       );
     },
 
-    relatedIngressRoutes() {
+    relatedIngressRoutesTCP() {
       const ns = this.resource?.metadata?.namespace;
       const serviceNames = this.matchingServiceNames;
 
@@ -135,15 +135,15 @@ export default {
 <template>
   <div>
     <ResourceTable
-      :rows="relatedIngressRoutes"
+      :rows="relatedIngressRoutesTCP"
       :headers="headers"
       :search="true"
       :row-actions="true"
       key-field="id"
       :table-actions="false"
     />
-    <div v-if="!$fetchState.pending && relatedIngressRoutes.length === 0" class="text-center p-20 text-muted">
-      No IngressRoutes found targeting this Deployment.
+    <div v-if="!$fetchState.pending && relatedIngressRoutesTCP.length === 0" class="text-center p-20 text-muted">
+      No IngressRoutesTCP found targeting this Deployment.
     </div>
   </div>
 </template>
