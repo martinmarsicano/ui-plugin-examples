@@ -1,0 +1,2 @@
+(("undefined"!==typeof self?self:this)["webpackChunktraefik_0_2_1"]=("undefined"!==typeof self?self:this)["webpackChunktraefik_0_2_1"]||[]).push([[37],{49037:function(e){const s=[{traefik:{ingressRoutes:"Ingress Routes",ingressRoutesTCP:"Ingress Routes TCP"}}];e.exports=s.length<=1?s[0]:s}}]);
+//# sourceMappingURL=traefik-0.2.1.umd.min.37.js.map
