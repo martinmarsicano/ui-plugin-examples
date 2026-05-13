@@ -1,0 +1,14 @@
+plugin/img/harvester.20240f8a.png
+plugin/package.json
+plugin/traefik-0.2.1.umd.min.37.js
+plugin/traefik-0.2.1.umd.min.37.js.map
+plugin/traefik-0.2.1.umd.min.42.js
+plugin/traefik-0.2.1.umd.min.42.js.map
+plugin/traefik-0.2.1.umd.min.440.js
+plugin/traefik-0.2.1.umd.min.440.js.map
+plugin/traefik-0.2.1.umd.min.59.js
+plugin/traefik-0.2.1.umd.min.59.js.map
+plugin/traefik-0.2.1.umd.min.60.js
+plugin/traefik-0.2.1.umd.min.60.js.map
+plugin/traefik-0.2.1.umd.min.js
+plugin/traefik-0.2.1.umd.min.js.map
