@@ -7,8 +7,8 @@ const PRODUCT = 'traefik';
 
 const routes = [
   {
-    name:      `${ PRODUCT }-c-cluster-resource`,
-    path:      `/:cluster/${ PRODUCT }/:resource`,
+    name:      `c-cluster-${ PRODUCT }-resource`,
+    path:      `/c/:cluster/${ PRODUCT }/:resource`,
     component: ListResource,
     meta:      {
       product: PRODUCT,
@@ -16,8 +16,8 @@ const routes = [
     },
   },
   {
-    name:      `${ PRODUCT }-c-cluster-resource-create`,
-    path:      `/:cluster/${ PRODUCT }/:resource/create`,
+    name:      `c-cluster-${ PRODUCT }-resource-create`,
+    path:      `/c/:cluster/${ PRODUCT }/:resource/create`,
     component: CreateResource,
     meta:      {
       product: PRODUCT,
@@ -25,8 +25,8 @@ const routes = [
     },
   },
   {
-    name:      `${ PRODUCT }-c-cluster-resource-id`,
-    path:      `/:cluster/${ PRODUCT }/:resource/:id`,
+    name:      `c-cluster-${ PRODUCT }-resource-id`,
+    path:      `/c/:cluster/${ PRODUCT }/:resource/:id`,
     component: ViewResource,
     meta:      {
       product: PRODUCT,
@@ -34,8 +34,8 @@ const routes = [
     },
   },
   {
-    name:      `${ PRODUCT }-c-cluster-resource-namespace-id`,
-    path:      `/:cluster/${ PRODUCT }/:resource/:namespace/:id`,
+    name:      `c-cluster-${ PRODUCT }-resource-namespace-id`,
+    path:      `/c/:cluster/${ PRODUCT }/:resource/:namespace/:id`,
     component: ViewNamespacedResource,
     meta:      {
       product: PRODUCT,
