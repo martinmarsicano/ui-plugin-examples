@@ -1,6 +1,12 @@
 import SteveModel from '@rancher/shell/plugins/steve/steve-class';
 
+const INGRESS_CLASS_ANNOTATION = 'kubernetes.io/ingress.class';
+
 export default class IngressRoute extends SteveModel {
+  get ingressClassText() {
+    return this.metadata?.annotations?.[INGRESS_CLASS_ANNOTATION] || '';
+  }
+
   get matchText() {
     const routes = this.spec?.routes || [];
 

@@ -116,6 +116,11 @@ export default {
         STATE,
         NAME_COL,
         {
+          name:     'ingressClass',
+          label:    'IngressClass',
+          value:    'ingressClassText',
+        },
+        {
           name:     'match',
           label:    'Match',
           value:    'matchText',

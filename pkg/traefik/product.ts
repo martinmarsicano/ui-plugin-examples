@@ -1,5 +1,11 @@
 import { STATE, NAME as NAME_COL, AGE, NAMESPACE } from '@shell/config/table-headers';
 
+const INGRESS_CLASS_ANNOTATION = 'kubernetes.io/ingress.class';
+
+function ingressClass(row: any) {
+  return row.ingressClassText || row.metadata?.annotations?.[INGRESS_CLASS_ANNOTATION] || '';
+}
+
 export function init($plugin: any, store: any) {
   const PRODUCT_NAME = 'explorer';
   const INGRESS_ROUTE = 'traefik.io.ingressroute';
@@ -36,6 +42,12 @@ export function init($plugin: any, store: any) {
     NAME_COL,
     NAMESPACE,
     {
+      name:     'ingressClass',
+      label:    'IngressClass',
+      getValue: ingressClass,
+      search:   [INGRESS_CLASS_ANNOTATION],
+    },
+    {
       name:     'match',
       label:    'Match',
       getValue: (row: any) => row.matchText,
@@ -53,6 +65,12 @@ export function init($plugin: any, store: any) {
     STATE,
     NAME_COL,
     NAMESPACE,
+    {
+      name:     'ingressClass',
+      label:    'IngressClass',
+      getValue: ingressClass,
+      search:   [INGRESS_CLASS_ANNOTATION],
+    },
     {
       name:     'match',
       label:    'Match',
