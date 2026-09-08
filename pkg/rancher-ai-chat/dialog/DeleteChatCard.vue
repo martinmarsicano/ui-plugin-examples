@@ -1,0 +1,108 @@
+<!-- Adapted from rancher-ai-ui for this chat-only extension; see README.md and LICENSE. -->
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useStore } from 'vuex';
+import { useI18n } from '@shell/composables/useI18n';
+import { Card } from '@components/Card';
+import RcButton from '@components/RcButton/RcButton.vue';
+
+const store = useStore();
+const { t } = useI18n(store);
+
+const props = defineProps({
+  name: {
+    type:    String,
+    default: '',
+  },
+});
+
+const emit = defineEmits([
+  'confirm',
+  'close',
+]);
+
+const nameLabel = computed(() => {
+  const name = props.name;
+
+  if (!name) {
+    return '';
+  }
+
+  return name.length > 13 ? `${ name.substring(0, 10) }...` : name;
+});
+
+function confirm() {
+  emit('confirm');
+  close();
+}
+
+function close() {
+  emit('close');
+}
+</script>
+
+<template>
+  <Card
+    class="prompt-remove"
+    :show-highlight-border="false"
+  >
+    <template #title>
+      <h4 class="text-default-text">
+        {{ t('promptRemove.title') }}
+      </h4>
+    </template>
+    <template #body>
+      <div
+        class="mb-10"
+      >
+        <span>
+          {{ t('aiChat.history.chat.delete.modal.message') }}
+        </span>
+        <span v-if="props.name">
+          <b>{{ nameLabel }}</b>
+        </span>
+        <br>
+        <span>
+          {{ t('aiChat.history.chat.delete.modal.warning') }}
+        </span>
+      </div>
+    </template>
+    <template #actions>
+      <button
+        class="btn role-secondary"
+        @click="close"
+      >
+        {{ t('aiChat.history.chat.delete.modal.cancel') }}
+      </button>
+      <div class="spacer" />
+      <RcButton
+        class="btn bg-error ml-10"
+        data-testid="prompt-remove-confirm-button"
+        @click="confirm"
+      >
+        {{ t('aiChat.history.chat.delete.modal.confirm') }}
+      </RcButton>
+    </template>
+  </Card>
+</template>
+
+<style lang="scss" scoped>
+  .prompt-remove {
+    &.card-container {
+      box-shadow: none;
+    }
+
+    #confirm {
+      width: 90%;
+      margin-left: 3px;
+    }
+
+    .actions {
+      text-align: right;
+    }
+  }
+
+  button.bg-error {
+    background-color: var(--error);
+  }
+</style>

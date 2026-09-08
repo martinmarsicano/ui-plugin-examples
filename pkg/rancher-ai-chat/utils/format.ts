@@ -1,0 +1,442 @@
+import MarkdownIt from 'markdown-it';
+import {
+  ActionType, MessageConfirmationAction, Tag, Context,
+  Message,
+  Role,
+  MessageAction,
+  HistoryChatMessage,
+  ChatMetadata,
+  ConfirmationStatus,
+  AgentMetadata,
+  AIAgentConfigCRD,
+  Agent,
+  MessageLabelKey,
+  ChatError,
+  SourceLinkItem,
+  ToolsConfig,
+  ToolCall,
+  SubAgentProcessingMetadata,
+  AgentSelectionMode,
+  McpAuthenticationRequest,
+} from '../types';
+import { error } from '../utils/log';
+import { validateActionResource } from './validator';
+import { printTools } from '../components/tools/format';
+
+interface WSInputMessageArgs {
+  prompt: string;
+  agent?: string;
+  context?: Context[];
+  labels?: Record<MessageLabelKey, string>;
+  tags?: string[];
+  tools?: ToolsConfig;
+}
+
+const md = new MarkdownIt({
+  html:        true,
+  breaks:      true,
+  linkify:     true,
+  typographer: true,
+});
+
+/**
+ * Custom rule to always open links in new window
+ * It applies only to <a> tags.
+ */
+md.renderer.rules.link_open = (tokens, idx) => {
+  tokens[idx].attrSet('target', '_blank');
+  tokens[idx].attrSet('rel', 'noopener,noreferrer');
+
+  return md.renderer.renderToken(tokens, idx, {});
+};
+
+export function formatMessageContent(message: string) {
+  const raw = md.render(message ?? '');
+
+  // remove trailing <br> tags and trailing whitespace/newlines
+  return raw.replace(/(?:(?:<br\s*\/?>)|\r?\n|\s)+$/gi, '');
+}
+
+export function formatWSInputMessage(args: WSInputMessageArgs): string {
+  const context = (args.context || []).reduce((acc, ctx) => ({
+    ...acc,
+    [ctx.tag]: ctx.value
+  }), {});
+
+  const tags = args.tags?.length ? args.tags : undefined;
+
+  return JSON.stringify({
+    prompt: args.prompt,
+    agent:  args.agent,
+    tools:  args.tools,
+    labels: args.labels,
+    context,
+    tags,
+  });
+}
+
+export function formatChatErrorMessage(data: string): ChatError {
+  const cleaned = data.replaceAll(Tag.ChatErrorStart, '').replaceAll(Tag.ChatErrorEnd, '').trim();
+
+  if (cleaned) {
+    try {
+      const parsed = JSON.parse(cleaned);
+
+      return parsed;
+    } catch (err) {
+      error('Failed to parse chat error message:', err);
+    }
+  }
+
+  return { message: 'An error occurred.' };
+}
+
+export function formatChatMetadata(data: string): ChatMetadata | null {
+  if (data.startsWith(Tag.ChatMetadataStart) && data.endsWith(Tag.ChatMetadataEnd)) {
+    const cleaned = data.replaceAll(Tag.ChatMetadataStart, '').replaceAll(Tag.ChatMetadataEnd, '').trim();
+
+    try {
+      return JSON.parse(cleaned);
+    } catch (err) {
+      error('Failed to parse chat metadata:', err);
+    }
+  }
+
+  return null;
+}
+
+export function formatAgentFromCRD(config: AIAgentConfigCRD): Agent {
+  return {
+    name:        config.metadata.name,
+    displayName: config.spec.displayName,
+    description: config.spec.description,
+    status:      config.state || 'unknown',
+  };
+}
+
+export function formatAgentMetadata(data: string): Partial<AgentMetadata> | null {
+  const cleaned = data.replaceAll(Tag.AgentMetadataStart, '').replaceAll(Tag.AgentMetadataEnd, '').trim();
+
+  try {
+    const rawMetadata = JSON.parse(cleaned);
+
+    if (rawMetadata) {
+      const { recommended } = rawMetadata;
+
+      return { recommended };
+    }
+  } catch (err) {
+    error('Failed to parse agent metadata:', err);
+  }
+
+  return null;
+}
+
+export function formatSubAgentProcessingMetadata(data: string): SubAgentProcessingMetadata | null {
+  const cleaned = data.replaceAll(Tag.ProcessingSubagentInitStart, '').replaceAll(Tag.ProcessingSubagentInitEnd, '').trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+
+    return parsed;
+  } catch (err) {
+    error('Failed to parse sub-agent processing metadata:', err);
+  }
+
+  return null;
+}
+
+export function formatMcpAuthenticationRequest(data: string): McpAuthenticationRequest | null {
+  const cleaned = data.replaceAll(Tag.AuthenticationRequestStart, '').replaceAll(Tag.AuthenticationRequestEnd, '').trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+
+    return parsed;
+  } catch (err) {
+    error('Failed to parse MCP authentication request:', err);
+  }
+
+  return null;
+}
+
+export function formatMcpRefreshTokenRequest(data: string): string | null {
+  const cleaned = data.replaceAll(Tag.TokenRefreshRequestStart, '').replaceAll(Tag.TokenRefreshRequestEnd, '').trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+
+    return parsed?.agent || null;
+  } catch (err) {
+    error('Failed to parse MCP token refresh request:', err);
+  }
+
+  return null;
+}
+
+export function formatMessageRelatedResourcesActions(value: string, actionType = ActionType.Button): MessageAction[] {
+  value = value.replaceAll(Tag.McpResultStart, '').replaceAll(Tag.McpResultEnd, '').trim();
+
+  if (value) {
+    try {
+      const parsed = JSON.parse(value);
+
+      if (Array.isArray(parsed)) {
+        return parsed.flatMap((item) => formatMessageRelatedResourcesActions(JSON.stringify(item), actionType));
+      }
+
+      if (!validateActionResource(parsed)) {
+        return [];
+      }
+
+      const names = Array.isArray(parsed.name) ? parsed.name : [parsed.name];
+
+      return names.map((name: string) => ({
+        type:     actionType,
+        resource: {
+          kind:      parsed.kind,
+          type:      parsed.type,
+          name,
+          namespace: parsed.namespace,
+          cluster:   parsed.cluster,
+        },
+      }));
+    } catch (err) {
+      error('Failed to parse MCP response:', err);
+    }
+  }
+
+  return [];
+}
+
+export function formatConfirmationActions(value: string): MessageConfirmationAction[] | null {
+  value = value.replaceAll(Tag.ConfirmationStart, '').replaceAll(Tag.ConfirmationEnd, '').trim();
+
+  if (value) {
+    try {
+      const parsed = JSON.parse(value);
+
+      return parsed;
+    } catch (err) {
+      error('Failed to parse confirmation response:', err);
+    }
+  }
+
+  return null;
+}
+
+export function formatTools(tools: ToolCall[], remaining: string): { tools: ToolCall[]; remaining: string } {
+  const re = /<ui-tools\b[^>]*>([\s\S]*?)<\/ui-tools>/i;
+  const match = remaining?.match(re);
+
+  if (match) {
+    const inner = match[1]; // first ui-tools content
+
+    try {
+      const parsed = JSON.parse(inner);
+      const toolsArray = Array.isArray(parsed) ? parsed : [parsed];
+
+      tools.push(...toolsArray);
+    } catch (err) {
+      error('Failed to parse ui-tools content:', err);
+    }
+
+    remaining = remaining.replace(match[0], '').trim();
+
+    if (remaining) {
+      return formatTools(tools, remaining);
+    }
+  }
+
+  return {
+    tools,
+    remaining
+  };
+}
+
+export function formatFileMessages(principal: any, messages: Message[]): string {
+  const avatar = {
+    [Role.User]:      `👤 ${ principal?.name || 'user' }`,
+    [Role.Assistant]: '🤖 AI Chat',
+    [Role.System]:    '🛠️ AI Chat',
+  };
+
+  return (messages || []).map((msg) => {
+    const timestamp = msg.timestamp?.toLocaleTimeString([], {
+      hour:   '2-digit',
+      minute: '2-digit'
+    });
+
+    let body = msg.summaryContent ? `Summary: ${ msg.summaryContent }\n` : '';
+
+    body += msg.templateContent?.content?.message ? `${ msg.templateContent.content.message }\n` : '';
+    body += msg.messageContent ? `${ msg.messageContent }\n` : '';
+    body += msg.thinkingContent ? `${ msg.thinkingContent }\n` : '';
+
+    if (msg.contextContent?.length) {
+      body += `Context: ${ JSON.stringify(msg.contextContent) }\n`;
+    }
+
+    if (msg.tools?.length) {
+      body += printTools(msg.tools);
+    }
+
+    return `[${ timestamp }] [${ avatar[msg.role] }]: ${ body }`;
+  }).join('\n');
+}
+
+export function formatSourceLinks(links: SourceLinkItem[], value: string): SourceLinkItem[] {
+  const cleanedLink = value.replaceAll(Tag.DocLinkStart, '').replaceAll(Tag.DocLinkEnd, '').trim();
+
+  return [
+    ...links,
+    cleanedLink
+  ];
+}
+
+export function formatErrorMessage(value: string): ChatError {
+  value = value.replaceAll(Tag.ErrorStart, '').replaceAll(Tag.ErrorEnd, '').trim();
+
+  if (value) {
+    try {
+      const parsed = JSON.parse(value);
+
+      return parsed;
+    } catch (err) {
+      error('Failed to parse error message:', err);
+    }
+  }
+
+  return { message: 'An error occurred.' };
+}
+
+export function formatAuthenticationErrorMessage(value: string): ChatError {
+  value = value.replaceAll(Tag.AuthenticationErrorStart, '').replaceAll(Tag.AuthenticationErrorEnd, '').trim();
+
+  if (value) {
+    try {
+      const parsed = JSON.parse(value);
+
+      return parsed;
+    } catch (err) {
+      error('Failed to parse authentication error message:', err);
+    }
+  }
+
+  return { message: 'An error occurred.' };
+}
+
+export function buildMessageFromHistoryMessage(msg: HistoryChatMessage, agents: Agent[]): Message {
+  /**
+   * Parsing agent metadata
+   */
+  const agent = msg.agent ? agents.find((a) => a.name === msg.agent) : null;
+
+  const agentMetadata = {
+    agent:         agent || null,
+    selectionMode: msg.agent ? AgentSelectionMode.Manual : AgentSelectionMode.Auto,
+  };
+
+  /**
+   * Parsing context
+   */
+  const contextData = (msg.context || {}) as Record<string, any>;
+
+  const contextContent: Context[] = Object.keys(contextData).map((key) => ({
+    value:       contextData[key],
+    tag:         key,
+    description:   key,
+  }));
+
+  /**
+   * Parsing related resources actions
+   */
+  let relatedResourcesActions: MessageAction[] = [];
+
+  if (msg.message?.startsWith(Tag.McpResultStart) && msg.message?.includes(Tag.McpResultEnd)) {
+    const mcpPart = msg.message.substring(
+      msg.message.indexOf(Tag.McpResultStart),
+      msg.message.indexOf(Tag.McpResultEnd) + Tag.McpResultEnd.length
+    );
+
+    const remaining = msg.message.replace(mcpPart, '').trim();
+
+    relatedResourcesActions = formatMessageRelatedResourcesActions(mcpPart);
+    msg.message = remaining;
+  }
+
+  /**
+   * Parsing confirmation action
+   */
+  let confirmation = undefined;
+
+  if (msg.message.startsWith(Tag.ConfirmationStart) && msg.message.endsWith(Tag.ConfirmationEnd) && msg.confirmation !== undefined) {
+    const confirmationActions = formatConfirmationActions(msg.message);
+
+    if (confirmationActions) {
+      confirmation = {
+        actions: confirmationActions,
+        status:  msg.confirmation ? ConfirmationStatus.Confirmed : ConfirmationStatus.Canceled,
+      };
+      msg.message = '';
+    }
+  }
+
+  /**
+   * Parsing source links
+   */
+  let sourceLinks: SourceLinkItem[] = [];
+
+  while (msg.message?.includes(Tag.DocLinkStart) && msg.message?.includes(Tag.DocLinkEnd)) {
+    const linkPart = msg.message.substring(
+      msg.message.indexOf(Tag.DocLinkStart),
+      msg.message.indexOf(Tag.DocLinkEnd) + Tag.DocLinkEnd.length
+    );
+
+    sourceLinks = formatSourceLinks(sourceLinks, linkPart);
+    msg.message = msg.message.replace(linkPart, '').trim();
+  }
+
+  /**
+   * Parsing thinking content
+   */
+  let thinkingContent = '';
+
+  if (msg.message?.startsWith(Tag.ThinkingStart) && msg.message?.includes(Tag.ThinkingEnd)) {
+    const thinkingPart = msg.message.substring(
+      msg.message.indexOf(Tag.ThinkingStart),
+      msg.message.indexOf(Tag.ThinkingEnd) + Tag.ThinkingEnd.length
+    );
+
+    thinkingContent = thinkingPart
+      .replaceAll(Tag.ThinkingStart, '')
+      .replaceAll(Tag.ThinkingEnd, '')
+      .trim();
+
+    const remaining = msg.message.replace(thinkingPart, '').trim();
+
+    msg.message = remaining;
+  }
+
+  /**
+   * Parsing summary content
+   */
+  const summaryContent = msg.labels?.[MessageLabelKey.Summary] || undefined;
+
+  return {
+    role:              msg.role === 'agent' ? Role.Assistant : Role.User,
+    completed:         true,
+    thinking:          false,
+    showThinking:      false,
+    agentMetadata,
+    thinkingContent,
+    contextContent,
+    summaryContent,
+    relatedResourcesActions,
+    confirmation,
+    sourceLinks,
+    tools:             msg.tools || [],
+    messageContent:    msg.message,
+    timestamp:         new Date(msg.createdAt),
+  };
+}

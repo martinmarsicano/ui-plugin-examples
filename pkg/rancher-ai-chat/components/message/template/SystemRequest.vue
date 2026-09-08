@@ -1,0 +1,199 @@
+<!-- Adapted from rancher-ai-ui for this chat-only extension; see README.md and LICENSE. -->
+<script setup lang="ts">
+import { computed, type PropType } from 'vue';
+import { Message } from '../../../types';
+import RcButton from '@components/RcButton/RcButton.vue';
+import { formatMessageContent } from '../../../utils/format';
+import SystemAvatar from '../avatar/SystemAvatar.vue';
+
+const props = defineProps({
+  message: {
+    type:    Object as PropType<Message>,
+    default: () => ({} as Message),
+  },
+  disabled: {
+    type:    Boolean,
+    default: false,
+  },
+});
+
+const emit = defineEmits(['update:message']);
+
+const actions = computed(() => {
+  const all = props.message?.actions || [];
+
+  return {
+    confirm: all[0],
+    cancel:  all[1],
+  };
+});
+
+function doAction(type: 'confirm' | 'cancel') {
+  if (actions.value[type]?.action) {
+    const confirmation = actions.value[type].action();
+
+    emit('update:message', {
+      ...props.message,
+      confirmation
+    });
+  }
+}
+</script>
+
+<template>
+  <div
+    class="chat-system-request-message"
+    :class="{ 'disabled-panel': props.disabled }"
+  >
+    <SystemAvatar class="chat-msg-avatar" />
+    <div
+      v-if="props.message?.templateContent?.content?.message"
+      class="chat-system-request-msg-bubble"
+    >
+      <div class="chat-system-request-msg-text">
+        <span
+          v-clean-html="formatMessageContent(props.message.templateContent.content.message || '')"
+        />
+      </div>
+
+      <div class="chat-system-request-actions">
+        <div
+          v-if="props.message.confirmation"
+          class="chat-system-request-actions-result"
+          :class="`status-${props.message.confirmation.status}`"
+          :data-testid="`rancher-ai-chat-chat-message-confirmation-status-${ props.message.confirmation.status }`"
+        >
+          <i :class="[ 'icon', props.message.confirmation.icon ]" />
+          <span
+            v-clean-html="formatMessageContent(props.message.confirmation.label || '')"
+            class="chat-system-request-msg-text"
+          />
+        </div>
+        <div
+          v-else
+          class="chat-system-request-actions-buttons"
+        >
+          <RcButton
+            v-if="actions.cancel?.action"
+            small
+            tertiary
+            data-testid="rancher-ai-chat-chat-message-confirmation-cancel-button"
+            @click="doAction('cancel')"
+          >
+            <span class="rc-button-label">
+              {{ actions.cancel?.label }}
+            </span>
+          </RcButton>
+          <RcButton
+            v-if="actions.confirm?.action"
+            small
+            secondary
+            data-testid="rancher-ai-chat-chat-message-confirmation-confirm-button"
+            @click="doAction('confirm')"
+          >
+            <span class="rc-button-label">
+              {{ actions.confirm?.label }}
+            </span>
+          </RcButton>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style lang='scss' scoped>
+.chat-system-request-message {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-system-request-msg-bubble {
+  position: relative;
+  background: var(--body-bg);
+  color: var(--body-text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px 0 var(--shadow);
+  padding: 12px;
+  line-height: 21px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  /* Hide actions by default, show on hover */
+  &:hover .chat-system-request-msg-bubble-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.chat-system-request-msg-text, :deep() pre {
+  word-break: break-word;
+  white-space: pre-line;
+  list-style-position: inside;
+}
+
+.chat-system-request-msg-text {
+  &:deep(code) {
+    padding: initial;
+    border: initial;
+    border-radius: initial;
+    background-color: transparent;
+    color: #025937;
+  }
+
+  &:deep(ul) {
+    white-space: normal;
+    margin: 0;
+    padding-left: 1rem;
+  }
+
+  &:deep(th) {
+    text-align: left;
+  }
+
+  &:deep(pre) {
+    margin: 0;
+  }
+}
+
+.theme-dark .chat-system-request-msg-text :deep(code) {
+  color: #C0EFDE;
+}
+
+.chat-system-request-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  margin-top: 16px;
+
+  .chat-system-request-actions-buttons {
+    display: flex;
+    width: 100%;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+}
+
+.chat-system-request-actions-result {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  margin-left: auto;
+
+  &.status-confirmed {
+    .icon {
+      color: var(--success);
+    }
+  }
+
+  &.status-canceled {
+    .icon {
+      color: var(--error);
+    }
+  }
+}
+</style>

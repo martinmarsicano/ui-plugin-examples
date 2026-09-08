@@ -1,0 +1,235 @@
+<!-- Adapted from rancher-ai-ui for this chat-only extension; see README.md and LICENSE. -->
+<script setup lang="ts">
+import { computed, type PropType } from 'vue';
+import { useStore } from 'vuex';
+import { useI18n } from '@shell/composables/useI18n';
+import RcButton from '@components/RcButton/RcButton.vue';
+import { warn } from '../../utils/log';
+import { ConfirmationStatus, ConfirmationActionType, Message } from '../../types';
+import { ToolName } from '../../components/tools/types';
+import Tools from '../tools/index.vue';
+
+const store = useStore();
+const { t } = useI18n(store);
+
+const props = defineProps({
+  message: {
+    type:    Object as PropType<Message>,
+    default: () => ({} as Message),
+  },
+});
+
+const emit = defineEmits(['confirm']);
+
+const CONFIRMATION_STATUS: Partial<Record<ConfirmationStatus, { icon: string; label: string }>> = {
+  [ConfirmationStatus.Confirmed]: {
+    icon:  'icon icon-checkmark',
+    label: t('aiChat.confirmation.confirmed'),
+  },
+  [ConfirmationStatus.Canceled]: {
+    icon:  'icon icon-close',
+    label: t('aiChat.confirmation.canceled'),
+  },
+};
+
+const confirmationText = computed(() => {
+  const msg = t('aiChat.confirmation.message.question');
+
+  try {
+    let out = '';
+
+    props.message.confirmation?.actions?.forEach((action) => {
+      const actionType = action?.type || ConfirmationActionType.Create;
+
+      const {
+        kind, name, namespace, cluster
+      } = action?.resource || {};
+
+      if (kind && name && cluster) {
+        switch (actionType) {
+        case ConfirmationActionType.Create:
+          out += `${ t(`aiChat.confirmation.message.operation.create.description`, {
+            name,
+            kind,
+            namespace: namespace?.trim() || null,
+            cluster,
+            value:     JSON.stringify(action.payload)
+          }, true)  }<br>`;
+          break;
+        case ConfirmationActionType.Update:
+        case ConfirmationActionType.Patch:
+          const description = action?.payload?.patch?.reduce((acc: string, curr) => {
+            const { op, value, path } = curr || {};
+
+            if (op && value && path) {
+              return `${ acc + t(`aiChat.confirmation.message.operation.update.description`, {
+                op,
+                value:     typeof value === 'string' ? value : JSON.stringify(value),
+                path,
+                name,
+                kind,
+                namespace: namespace?.trim() || null,
+                cluster
+              }, true) }<br>`;
+            }
+
+            return acc;
+          }, '');
+
+          if (!!description?.trim()) {
+            out += `${ description }<br>`;
+          }
+          break;
+        }
+      }
+    });
+
+    return `${ out }${ msg }`;
+  } catch (e) {
+    warn('Error generating confirmation description:', e);
+  }
+
+  return msg;
+});
+</script>
+
+<template>
+  <div class="confirmation-action">
+    <div class="confirmation-message">
+      <span
+        v-clean-html="confirmationText"
+        data-testid="rancher-ai-chat-chat-message-confirmation-message"
+      />
+    </div>
+    <div
+      v-if="props.message.confirmation?.status === ConfirmationStatus.Pending"
+      class="confirmation-buttons"
+    >
+      <div
+        v-if="props.message.confirmation?.actions?.some(action => action.type === ConfirmationActionType.Delete)"
+        class="delete-confirmation"
+      >
+        <!-- TODO Add Delete resource buttons when available in the backend -->
+      </div>
+      <div
+        v-else
+        class="standard-confirmation"
+      >
+        <RcButton
+          small
+          tertiary
+          data-testid="rancher-ai-chat-chat-message-confirmation-cancel-button"
+          @click="emit('confirm', false)"
+        >
+          <span class="rc-button-label">
+            {{ t('aiChat.confirmation.cancel') }}
+          </span>
+        </RcButton>
+        <RcButton
+          small
+          tertiary
+          data-testid="rancher-ai-chat-chat-message-confirmation-confirm-button"
+          @click="emit('confirm', true)"
+        >
+          <span class="rc-button-label">
+            {{ t('aiChat.confirmation.confirm') }}
+          </span>
+        </RcButton>
+      </div>
+    </div>
+    <div
+      v-else-if="props.message.confirmation"
+      class="confirmation-status"
+      :class="`status-${ props.message.confirmation.status }`"
+      :data-testid="`rancher-ai-chat-chat-message-confirmation-status-${ props.message.confirmation.status }`"
+    >
+      <i :class="CONFIRMATION_STATUS[props.message.confirmation.status]?.icon" />
+      <p>
+        {{ CONFIRMATION_STATUS[props.message.confirmation.status]?.label }}
+      </p>
+    </div>
+    <Tools
+      :key="props.message.tools?.length"
+      class="mmt-2"
+      :message="props.message"
+      :include="[
+        ToolName.ShowYaml,
+        ToolName.ShowYamlDiff,
+      ]"
+      :show-default-labels="true"
+      @action="emit('confirm', $event)"
+    />
+  </div>
+</template>
+
+<style lang='scss' scoped>
+.confirmation-message {
+  margin-bottom: 12px;
+  word-break: break-word;
+  white-space: pre-line;
+  list-style-position: inside;
+
+  &:deep(code) {
+    padding: initial;
+    border: initial;
+    border-radius: initial;
+    background-color: transparent;
+    color: #025937;
+  }
+
+  &:deep(ul) {
+    white-space: normal;
+    margin: 0;
+    padding-left: 1rem;
+  }
+
+  &:deep(th) {
+    text-align: left;
+  }
+
+  &:deep(pre) {
+    margin: 8px 0;
+  }
+
+  span {
+    word-break: break-word;
+    white-space: pre-line;
+    list-style-position: inside;
+  }
+}
+
+.theme-dark .confirmation-message :deep(code) {
+  color: #C0EFDE;
+}
+
+.confirmation-buttons, .standard-confirmation, .delete-confirmation {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirmation-status {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+
+  &.status-confirmed {
+    .icon {
+      color: var(--success);
+    }
+  }
+  &.status-canceled {
+    .icon {
+      color: var(--error);
+    }
+  }
+}
+
+.rc-button-label {
+  word-break: break-word;
+  white-space: pre-line;
+  list-style-position: inside;
+}
+</style>

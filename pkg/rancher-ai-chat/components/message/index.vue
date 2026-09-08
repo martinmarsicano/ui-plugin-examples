@@ -1,0 +1,465 @@
+<!-- Adapted from rancher-ai-ui for this chat-only extension; see README.md and LICENSE. -->
+<script setup lang="ts">
+import { computed, nextTick, type PropType } from 'vue';
+import { useStore } from 'vuex';
+import { useI18n } from '@shell/composables/useI18n';
+import {
+  FormattedMessage, MessageInternalSource, MessagePhase, Role as RoleEnum, ToolActionEvent,
+  ToolActionEventType
+} from '../../types';
+import { ToolName } from '../tools/types';
+import { extractMessageText } from '../../utils/label';
+import Tools from '../tools/index.vue';
+import ResourceButtons from '../message/resource-buttons/index.vue';
+import RouteButtons from '../message/route-buttons/index.vue';
+import Tool from '../tools/Tool.vue';
+import SourceLinks from '../tools/components/SourceLinks.vue';
+import Confirmation from './Confirmation.vue';
+import ContextTag from '../context/ContextTag.vue';
+import UserAvatar from './avatar/UserAvatar.vue';
+import SystemAvatar from './avatar/SystemAvatar.vue';
+import Processing from '../Processing.vue';
+import BubbleButton from '../BubbleButton.vue';
+import RcButton from '@components/RcButton/RcButton.vue';
+import { useInputComposable } from '../../composables/useInputComposable';
+
+const store = useStore();
+const { t } = useI18n(store);
+
+const props = defineProps({
+  message: {
+    type:    Object as PropType<FormattedMessage>,
+    default: () => ({} as FormattedMessage),
+  },
+  disabled: {
+    type:    Boolean,
+    default: false,
+  },
+  pendingConfirmation: {
+    type:    Boolean,
+    default: false,
+  }
+});
+
+const emit = defineEmits(['update:message', 'confirm:message', 'send:message']);
+
+const { updateInput, cleanInputAndTags, focusConsoleInput } = useInputComposable();
+
+const isThinking = computed(() => props.message.role === RoleEnum.Assistant &&
+  !props.message.completed &&
+  (props.message.thinking || !props.message.formattedMessageContent)
+);
+
+function handleCopy() {
+  let text = extractMessageText(props.message);
+
+  if (!text) {
+    return;
+  }
+
+  text = cleanInputAndTags(text);
+
+  navigator.clipboard.writeText(text);
+}
+
+function handleResendMessage() {
+  nextTick(() => emit('send:message', props.message));
+}
+
+function handleEditBeforeSending(text: string) {
+  updateInput(text);
+  focusConsoleInput();
+}
+
+function handleShowCompleteMessage() {
+  const showCompleteMessage = !props.message.showCompleteMessage;
+
+  nextTick(() => emit('update:message', {
+    ...props.message,
+    showCompleteMessage
+  }));
+}
+
+function handleShowThinking() {
+  const showThinking = !props.message.showThinking;
+
+  nextTick(() => emit('update:message', {
+    ...props.message,
+    showThinking
+  }));
+}
+
+function handleToolAction(event: ToolActionEvent) {
+  if (event.type === ToolActionEventType.Select) {
+    emit('send:message', event.value);
+  } else if (event.type === ToolActionEventType.Edit) {
+    handleEditBeforeSending(event.value);
+  }
+}
+</script>
+
+<template>
+  <div
+    class="chat-message"
+    :class="{
+      'chat-message-user': props.message.role === RoleEnum.User,
+      'disabled-panel': props.disabled
+    }"
+  >
+    <component
+      :is="props.message.role === RoleEnum.User ? UserAvatar : SystemAvatar"
+      class="chat-msg-avatar"
+    />
+    <div class="chat-msg-content">
+      <div
+        class="chat-msg-bubble"
+        :class="{
+          'chat-msg-bubble-user': props.message.role === RoleEnum.User,
+          'chat-msg-bubble-assistant': props.message.role !== RoleEnum.User,
+          'chat-msg-bubble-error': props.message.source === MessageInternalSource.Error
+        }"
+      >
+        <div
+          v-if="!props.disabled"
+          class="chat-msg-bubble-actions"
+        >
+          <BubbleButton
+            v-if="props.message.role === RoleEnum.Assistant && !!props.message.thinkingContent"
+            :icon="'icon-thinking-process'"
+            :tooltip="props.message.showThinking ? t('aiChat.message.actions.tooltip.hideThinking') : t('aiChat.message.actions.tooltip.showThinking')"
+            @click="handleShowThinking"
+          />
+          <BubbleButton
+            v-if="props.message.role === RoleEnum.User && !pendingConfirmation"
+            :icon="'icon-edit'"
+            :tooltip="t('aiChat.message.actions.tooltip.editBeforeResend')"
+            :show-success="true"
+            @click="handleEditBeforeSending(extractMessageText(props.message) || '')"
+          />
+          <BubbleButton
+            :icon="'icon-copy'"
+            :tooltip="t('aiChat.message.actions.tooltip.copy')"
+            :show-success="true"
+            @click="handleCopy"
+          />
+          <BubbleButton
+            v-if="props.message.role === RoleEnum.User && !pendingConfirmation"
+            :icon="'icon-backup'"
+            :tooltip="t('aiChat.message.actions.tooltip.resend')"
+            @click="handleResendMessage"
+          />
+        </div>
+        <div class="chat-msg-text">
+          <div
+            v-if="props.message.role === RoleEnum.Assistant"
+            class="chat-msg-selected-agent-mode"
+            data-testid="rancher-ai-chat-chat-message-selected-agent-label"
+          >
+            <span
+              v-if="props.message.agentMetadata?.agent"
+              v-clean-tooltip="props.message.agentMetadata?.agent?.description"
+              class="chat-msg-selected-agent-mode-label"
+            >
+              {{ t('aiChat.agents.selectedAgent.label', { agent: props.message.agentMetadata?.agent?.displayName }) }}
+            </span>
+            <span
+              v-else
+              v-clean-tooltip="t('aiChat.agents.adaptiveMode.tooltip')"
+              class="chat-msg-selected-agent-mode-label"
+            >
+              {{ t('aiChat.agents.adaptiveMode.label') }}
+            </span>
+          </div>
+          <div v-if="!props.disabled && isThinking">
+            <Processing
+              data-testid="rancher-ai-chat-chat-message-thinking-label"
+              :phase="MessagePhase.Thinking"
+            />
+          </div>
+          <span v-if="props.message.showThinking">
+            <br v-if="isThinking">
+            <span
+              v-if="props.message.formattedThinkingContent"
+              v-clean-html="props.message.formattedThinkingContent"
+            />
+            <br>
+          </span>
+          <span
+            v-if="!!props.message.summaryContent"
+            v-clean-html="props.message.summaryContent"
+          />
+          <span
+            v-if="props.message.formattedMessageContent && (!props.message.summaryContent || props.message.showCompleteMessage)"
+            v-clean-html="props.message.formattedMessageContent"
+            data-testid="rancher-ai-chat-chat-message-formatted-content"
+            :class="{
+              'chat-msg-user-expanded': !!props.message.summaryContent && props.message.showCompleteMessage
+            }"
+          />
+        </div>
+        <template v-if="!props.message.confirmation">
+          <Tools
+            :key="props.message.tools?.length"
+            class="mmt-2"
+            :message="props.message"
+            :exclude="[
+              ToolName.SelectOption,
+              ToolName.Suggestions,
+            ]"
+            :disabled="props.disabled"
+          />
+          <Tool
+            class="mmt-2"
+            :name="ToolName.SelectOption"
+            :message="props.message"
+            :disabled="props.disabled || props.pendingConfirmation"
+            @action="handleToolAction"
+          />
+          <Tool
+            v-if="!props.message.tools?.find((t) => t.toolName === ToolName.SelectOption)"
+            class="mmt-2"
+            :name="ToolName.Suggestions"
+            :message="props.message"
+            :disabled="props.disabled || props.pendingConfirmation"
+            @action="handleToolAction"
+          />
+        </template>
+        <div
+          v-if="props.message.confirmation"
+          class="mmt-2"
+        >
+          <Confirmation
+            :message="props.message"
+            @confirm="emit('confirm:message', {
+              message: props.message,
+              result: $event
+            })"
+          />
+        </div>
+        <RcButton
+          v-if="props.message.role === RoleEnum.Assistant && !!props.message.thinkingContent && props.message.showThinking"
+          class="inline-button"
+          small
+          ghost
+          @click="handleShowThinking"
+        >
+          <a>{{ t('aiChat.message.actions.hideThinking') }}</a>
+        </RcButton>
+        <RcButton
+          v-if="!!props.message.summaryContent"
+          class="inline-button"
+          small
+          ghost
+          @click="handleShowCompleteMessage"
+        >
+          <a>{{ props.message.showCompleteMessage ? t('aiChat.message.actions.hideCompleteMessage') : t('aiChat.message.actions.showCompleteMessage') }}</a>
+        </RcButton>
+      </div>
+      <div
+        v-if="props.message.role === RoleEnum.User && props.message.contextContent?.length"
+        class="mmt-2 chat-msg-user-context-tags"
+      >
+        <ContextTag
+          v-for="(item, index) in props.message.contextContent"
+          :key="index"
+          :item="item"
+          :remove-enabled="false"
+          type="user"
+          class="chat-msg-user-context-tag"
+        />
+      </div>
+      <div
+        v-if="props.message.sourceLinks?.length"
+        class="mmt-2"
+      >
+        <SourceLinks
+          :links="props.message.sourceLinks"
+        />
+      </div>
+      <div
+        v-if="props.message.relatedResourcesActions?.length"
+        class="mmt-2"
+      >
+        <ResourceButtons
+          :label="t('aiChat.message.relatedResourcesActions.label')"
+          :actions="props.message.relatedResourcesActions"
+        />
+      </div>
+      <div
+        v-if="props.message.actions?.length"
+        class="mmt-2"
+      >
+        <RouteButtons
+          :label="t('aiChat.message.quickActions.label')"
+          :actions="props.message.actions"
+        />
+      </div>
+      <div
+        v-if="props.message.timestamp"
+        data-testid="rancher-ai-chat-chat-message-timestamp"
+        class="chat-msg-timestamp"
+      >
+        {{ props.message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+      </div>
+    </div>
+  </div>
+</template>
+
+<style lang='scss' scoped>
+.chat-message {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-msg-content {
+  margin-right: 40px;
+}
+
+.chat-message-user {
+  flex-direction: row-reverse;
+
+  .chat-msg-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin: 0;
+    margin-left: 40px;
+  }
+
+  .chat-msg-text {
+    color: var(--body-text);
+  }
+}
+
+.chat-msg-bubble {
+  position: relative;
+  background: var(--body-bg);
+  color: var(--body-text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px 0 var(--shadow);
+  padding: 12px;
+  line-height: 21px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  /* Hide actions by default, show on hover */
+  &:hover .chat-msg-bubble-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.chat-msg-bubble-user {
+  background: var(--tertiary-hover);
+  align-items: flex-end;
+}
+
+.chat-msg-bubble-error {
+  background: var(--error-banner-bg);
+  border-color: var(--error);
+  color: var(--error-banner-text, var(--error));
+}
+
+.chat-msg-bubble-actions {
+  position: absolute;
+  top: -24px;
+  right: -8px;
+  display: flex;
+  gap: 4px;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.chat-msg-text, :deep() pre {
+  word-break: break-word;
+  white-space: pre-line;
+  list-style-position: inside;
+}
+
+.chat-msg-text {
+  &:deep(code) {
+    padding: initial;
+    border: initial;
+    border-radius: initial;
+    background-color: transparent;
+    color: #025937;
+  }
+
+  &:deep(ul) {
+    white-space: normal;
+    margin: 0;
+    padding-left: 1rem;
+  }
+
+  &:deep(th) {
+    text-align: left;
+  }
+
+  &:deep(pre) {
+    margin: 0;
+  }
+}
+
+.theme-dark .chat-msg-text :deep(code) {
+  color: #C0EFDE;
+}
+
+.chat-msg-timestamp {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  align-self: flex-end;
+}
+
+.icon-action-source {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.inline-button {
+  margin-left: auto;
+  height: 15px;
+  min-height: 15px;
+}
+
+.chat-msg-user-expanded {
+  display: block;
+  margin-top: 16px;
+
+  :deep() ul {
+    padding: 0 0 0 8px;
+    margin: 0;
+    margin-top: -10px;
+  }
+}
+
+.chat-msg-user-context-tags {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.chat-msg-selected-agent-mode {
+  margin-bottom: 4px;
+}
+.chat-msg-selected-agent-mode-label {
+  color: #BFC1D3;
+  font-family: Lato;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 21px; /* 150% */
+}
+</style>

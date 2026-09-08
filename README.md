@@ -8,6 +8,9 @@ If you are interested in the publishing process, we recommend following our offi
 
 |Name|Description|Rancher Version|
 |----|-----------|---------------|
+|rancher-ai-chat|Custom AI-Chat extension that uses official Rancher AI-Agent as backend|v2.13.0|
+|everest|Everest resources and Percona database operator objects|v2.10.0|
+|traefik|Traefik IngressRoute and IngressRouteTCP resource integration|v2.10.0|
 |clock|Adds a new feature to the top-level menu that shows a full-page clock|v2.10.0|
 |extension-crd|Adds support for the Rancher Extensions CRD to Rancher Manager|v2.10.0|
 |homepage|Example extension that changes the landing home page|v2.10.0|
@@ -56,7 +59,7 @@ Example for publishing the `extensions-api-demo` extension version `0.2.3`:
 extensions-api-demo-0.2.3
 ```
 
-This will create a PR with all the assets needed for the publish. Check the contents of the PR and if all is looking good, approve and merge to officially publish it. 
+This will create a PR with all the assets needed for the publish. Check the contents of the PR and if all is looking good, approve and merge to officially publish it.
 
 ### Bugs & Issues
 Please submit bugs and issues to [rancher/dashboard](//github.com/rancher/dashboard/issues). Assign the label `area/extensions`

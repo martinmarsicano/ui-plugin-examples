@@ -1,0 +1,751 @@
+// Adapted from rancher-ai-ui for this chat-only extension; see README.md and LICENSE.
+import {
+  ref, computed, onMounted, ComputedRef, onBeforeUnmount
+} from 'vue';
+import { useStore } from 'vuex';
+import { useI18n } from '@shell/composables/useI18n';
+import { NORMAN } from '@shell/config/types';
+import {
+  ActionType,
+  Agent,
+  AgentSelectionMode,
+  ChatError,
+  ChatMetadata,
+  ConfirmationResponse,
+  ConfirmationStatus,
+  McpAuthenticationRequest,
+  McpAuthenticationResponse,
+  McpTokenRefreshResponse,
+  Message,
+  MessageAction,
+  MessageInternalSource,
+  MessageLabelKey,
+  MessagePhase,
+  MessageProcessingState,
+  MessageTag,
+  MessageTemplateComponent,
+  Role,
+  Tag
+} from '../types';
+import { ToolName } from '../components/tools/types';
+import { warn } from '../utils/log';
+import {
+  formatWSInputMessage, formatMessageRelatedResourcesActions, formatConfirmationActions, formatFileMessages,
+  formatErrorMessage, formatSourceLinks,
+  formatChatMetadata,
+  formatChatErrorMessage,
+  formatTools,
+  formatSubAgentProcessingMetadata,
+  formatAgentMetadata,
+  formatMcpAuthenticationRequest,
+  formatMcpRefreshTokenRequest,
+  formatAuthenticationErrorMessage
+} from '../utils/format';
+import { validateUrl } from '../utils/url';
+import { downloadFile } from '@shell/utils/download';
+import { useContextComposable } from './useContextComposable';
+import { useAIAgentApiComposable } from './useAIAgentApiComposable';
+import { useToolsComposable } from './useToolsComposable';
+import AuthenticationHandler from '../handlers/authentication';
+
+const EXPAND_THINKING = false;
+
+const DISMISS_RECOMMENDED_AGENT_KEY = 'dismissed-agent-recommendation';
+const MAX_MESSAGES_BEFORE_RECOMMENDATION = 5;
+
+/**
+ * Composable for managing chat messages within the AI chat.
+ *
+ * It's designed to handle message sending, receiving, updating, and confirming,
+ * as well as managing the chat phase and error states.
+ *
+ * It exposes methods to interact with WebSocket events and to manipulate chat messages.
+ *
+ * @returns Composable for managing chat messages within the AI chat.
+ */
+export function useChatMessageComposable(
+  chatId: string,
+  hasPermissions: ComputedRef<boolean>,
+  agents: ComputedRef<Agent[]>,
+  agentName: ComputedRef<string>,
+  selectAgent: (name: string) => void // eslint-disable-line no-unused-vars
+) {
+  const store = useStore();
+  const { t } = useI18n(store);
+
+  const { selectContext, selectedContext } = useContextComposable();
+  const { toolsSelector } = useToolsComposable();
+  const { refreshMcpAuthenticationToken, fetchUIToolsCalls } = useAIAgentApiComposable();
+
+  const principal = store.getters['rancher/byId'](NORMAN.PRINCIPAL, store.getters['auth/principalId']) || {};
+
+  const currentMsg = ref<Message>({} as Message);
+
+  const chatMetadata = computed<ChatMetadata>(() => store.getters['rancher-ai-chat/chat/metadata'] || {});
+  const isChatInitialized = computed(() => !!chatMetadata.value.chatId);
+
+  const messageBox = computed(() => store.getters['rancher-ai-chat/chat/messageBox'](chatId));
+  const messages = computed(() => Object.values(store.getters['rancher-ai-chat/chat/messages'](chatId)) as Message[]);
+
+  const error = computed(() => store.getters['rancher-ai-chat/chat/error'](chatId));
+
+  const processingState = computed(() => store.getters['rancher-ai-chat/chat/processingState'](chatId));
+
+  const setProcessingState = (processingState: MessageProcessingState) => {
+    store.commit('rancher-ai-chat/chat/setProcessingState', {
+      chatId,
+      processingState
+    });
+  };
+
+  function wsSend(ws: WebSocket, value: string) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    ws.send(value);
+  }
+
+  function sendMessage(msg: string | Message, ws: WebSocket) {
+    let role = Role.User;
+
+    let summaryContent = '';
+    let messageContent = msg as string;
+    let contextContent = selectedContext.value;
+    let labels = undefined;
+    let source;
+
+    // msg is type of Message
+    if (msg && typeof msg === 'object' && msg.messageContent) {
+      role = msg.role;
+
+      summaryContent = msg.summaryContent || '';
+      if (summaryContent) {
+        labels = { [MessageLabelKey.Summary]: summaryContent };
+      }
+
+      messageContent = msg.messageContent || '';
+      contextContent = msg.contextContent || [];
+      source = msg.source;
+    } else { /* msg is type of string */ }
+
+    wsSend(ws, formatWSInputMessage({
+      prompt:  messageContent,
+      context: selectedContext.value,
+      agent:   agentName.value,
+      tools:   toolsSelector.value,
+      labels
+    }));
+
+    const agentMetadata = { agent: agents.value.find((a) => a.name === agentName.value) || {} as Agent };
+
+    addMessage({
+      role,
+      agentMetadata,
+      summaryContent,
+      messageContent,
+      contextContent,
+      source
+    });
+
+    if (source === MessageInternalSource.MessageBox) {
+      clearMessageBox();
+    }
+
+    setProcessingState({ phase: MessagePhase.Processing });
+  }
+
+  async function addMessage(message: Message) {
+    return await store.dispatch('rancher-ai-chat/chat/addMessage', {
+      chatId,
+      message
+    });
+  }
+
+  function updateMessage(message: Partial<Message>) {
+    store.commit('rancher-ai-chat/chat/updateMessage', {
+      chatId,
+      message
+    });
+  }
+
+  function confirmMessage({ message, result }: { message: Message; result: boolean }, ws: WebSocket) {
+    wsSend(ws, formatWSInputMessage({
+      prompt: result ? ConfirmationResponse.Yes : ConfirmationResponse.No,
+      agent:  message.agentMetadata?.agent?.name || undefined, // This is required when Agent selection is manual
+      tags:   [MessageTag.Confirmation]
+    }));
+
+    updateMessage({
+      id:           message.id,
+      confirmation: {
+        actions: message.confirmation?.actions || null,
+        status:  result ? ConfirmationStatus.Confirmed : ConfirmationStatus.Canceled
+      },
+    });
+
+    if (message.source === MessageInternalSource.MessageBox) {
+      clearMessageBox();
+    }
+  }
+
+  function getMessage(messageId: string) {
+    return store.getters['rancher-ai-chat/chat/message']({
+      chatId,
+      messageId
+    });
+  }
+
+  function buildMessage(agentName?: string): Message {
+    const agent = agentName ? agents.value.find((a) => a.name === agentName) : null;
+
+    return {
+      role:                     Role.Assistant,
+      thinkingContent: '',
+      messageContent:  '',
+      showThinking:             EXPAND_THINKING,
+      thinking:                 false,
+      agentMetadata:   {
+        agent:         agent || null,
+        selectionMode: agentName ? AgentSelectionMode.Manual : AgentSelectionMode.Auto,
+      },
+      completed: false
+    };
+  }
+
+  function buildWelcomeMessage(): Message {
+    return {
+      role:            Role.System,
+      templateContent: {
+        component: MessageTemplateComponent.Welcome,
+        content:   {
+          principal,
+          message: t('aiChat.message.system.welcome.info.message', {}, true),
+        }
+      },
+      source:    MessageInternalSource.Welcome,
+      completed: false,
+    };
+  }
+
+  function buildNoPermissionMessage(): Message {
+    return {
+      role:            Role.System,
+      templateContent: {
+        component: MessageTemplateComponent.NoPermission,
+        content:   {
+          principal,
+          message: 'empty',
+        }
+      },
+      completed: false,
+    };
+  }
+
+  function buildSystemRequestMessage(args: { content: any; component?: MessageTemplateComponent; actions: MessageAction[] }): Message {
+    const {
+      component = MessageTemplateComponent.SystemRequest,
+      content,
+      actions
+    } = args;
+
+    return {
+      role:            Role.System,
+      completed:       true,
+      templateContent: {
+        component,
+        content
+      },
+      actions
+    };
+  }
+
+  async function ensureSwitchAgentSuggestion(agentName = '') {
+    if (
+      agentName &&
+      !store.getters['rancher-ai-chat/chat/session']?.[DISMISS_RECOMMENDED_AGENT_KEY] &&
+      currentMsg.value.agentMetadata?.selectionMode === AgentSelectionMode.Auto &&
+      Number(currentMsg.value.id) >= MAX_MESSAGES_BEFORE_RECOMMENDATION
+    ) {
+      const agent = agents.value.find((a) => a.name === agentName);
+
+      const content = { message: t('aiChat.message.system.switchAgent.info', { agent: agent?.displayName || agentName }, true) };
+      const actions = [
+        {
+          label:  t('aiChat.message.system.switchAgent.actions.confirm'),
+          type:   ActionType.Button,
+          action: () => {
+            selectAgent(agentName);
+
+            return {
+              label:  t('aiChat.message.system.switchAgent.results.confirm', { agent: agent?.displayName || agentName }, true),
+              status: ConfirmationStatus.Confirmed,
+              icon:   'icon-checkmark'
+            };
+          },
+        },
+        {
+          label:  t('aiChat.message.system.switchAgent.actions.dismiss'),
+          type:   ActionType.Button,
+          action: () => {
+            // Dismiss future recommendations for this session (for all chats)
+            store.commit('rancher-ai-chat/chat/setSession', { [DISMISS_RECOMMENDED_AGENT_KEY]: true });
+
+            return {
+              label:   t('aiChat.message.system.switchAgent.results.dismiss', {}, true),
+              status:  ConfirmationStatus.Canceled,
+              icon:    'icon-close'
+            };
+          },
+        }
+      ];
+
+      const message = buildSystemRequestMessage({
+        content,
+        actions
+      });
+
+      await addMessage(message);
+    }
+  }
+
+  async function ensureAgentMcpAuthenticationRequest(ws: WebSocket, agents: Agent[], metadata: McpAuthenticationRequest) {
+    const agent = agents.find((a) => a.name === metadata?.agent);
+
+    if (agent) {
+      const content = {
+        agent,
+        message: t('aiChat.message.system.agentTokenRefresh.info', {}, true)
+      };
+      const actions = [
+        {
+          label:  t('aiChat.message.system.agentTokenRefresh.actions.confirm'),
+          type:   ActionType.Button,
+          action: () => {
+            AuthenticationHandler.createOauth2AuthenticationRequest(
+              metadata,
+              () => resolveOauth2Authentication(ws, McpAuthenticationResponse.Continue, MessagePhase.ResumingAgent),
+              () => resolveOauth2Authentication(ws, McpAuthenticationResponse.Cancel, MessagePhase.Idle)
+            );
+
+            return {
+              label:  t('aiChat.message.system.agentTokenRefresh.results.confirm', {}, true),
+              status: ConfirmationStatus.Confirmed,
+              icon:   'icon-checkmark'
+            };
+          },
+        },
+        {
+          label:  t('aiChat.message.system.agentTokenRefresh.actions.dismiss'),
+          type:   ActionType.Button,
+          action: () => {
+            resolveOauth2Authentication(ws, McpAuthenticationResponse.Cancel, MessagePhase.Idle);
+
+            return {
+              label:   t('aiChat.message.system.agentTokenRefresh.results.dismiss', {}, true),
+              status:  ConfirmationStatus.Canceled,
+              icon:    'icon-close'
+            };
+          },
+        }
+      ];
+
+      const message = buildSystemRequestMessage({
+        component: MessageTemplateComponent.McpAuthenticationRequest,
+        content,
+        actions
+      });
+
+      await addMessage(message);
+    }
+  }
+
+  function resolveOauth2Authentication(ws: WebSocket, response: McpAuthenticationResponse, nextPhase: MessagePhase) {
+    wsSend(ws, response);
+
+    setProcessingState({ phase: nextPhase });
+  }
+
+  function onopen(event: { target: WebSocket }) {
+    const ws = event.target;
+
+    if (!ws) {
+      return;
+    }
+
+    // A message is in the message box, send it immediately when WS connection is established
+    if (messageBox.value) {
+      sendMessage(messageBox.value, ws);
+    }
+  }
+
+  async function onmessage(event: MessageEvent) {
+    const ws = event.target as WebSocket;
+    const data = event.data;
+
+    if (!isChatInitialized.value) {
+      try {
+        processChatErrors(data);
+        processChatMetadata(data);
+
+        await ensureWelcomeMessage();
+      } catch (err) {
+        setErrors({
+          message: (err as Error)?.message || t('aiChat.error.chat.generic'),
+
+        });
+      }
+    } else {
+      try {
+        await processMessageData(ws, data);
+      } catch (err) {
+        processMessageErrorData(err as ChatError);
+      }
+    }
+  }
+
+  function onclose() {
+    if (currentMsg.value) {
+      currentMsg.value.completed = true;
+    }
+
+    AuthenticationHandler.abortPendingRequests();
+
+    clearMessageBox();
+
+    setProcessingState({ phase: MessagePhase.Idle });
+  }
+
+  function processChatErrors(data: string) {
+    if (data.startsWith(Tag.ChatErrorStart) && data.endsWith(Tag.ChatErrorEnd)) {
+      const errorMessage = formatChatErrorMessage(data);
+
+      throw errorMessage;
+    }
+  }
+
+  function processChatMetadata(data: string) {
+    const metadata = formatChatMetadata(data);
+
+    if (metadata) {
+      store.commit('rancher-ai-chat/chat/setMetadata', metadata);
+    }
+  }
+
+  async function ensureWelcomeMessage() {
+    // Conversation already started, no need to add welcome message
+    if (messages.value?.length > 0) {
+      return;
+    }
+
+    // Add Welcome message first
+    setProcessingState({ phase: MessagePhase.Initializing });
+
+    const msgId = await addMessage(buildWelcomeMessage());
+
+    const welcomeMessage = getMessage(msgId);
+
+    // Complete the welcome message with suggestions from tools call
+    if (!toolsSelector.value?.name) {
+      welcomeMessage.completed = true;
+
+      setProcessingState({ phase: MessagePhase.Idle });
+
+      return;
+    }
+
+    let prompt = `Provides 3 generic suggestions.
+      - The suggestions should be a 'discovery' action. It introduces a related but broader Rancher or Kubernetes topic, helping the user learn.
+      Examples: 1: How do I scale a deployment? 2: Check the resource usage for the local cluster 3: Show me the logs for the failing pod`;
+
+    if (selectedContext.value?.length) {
+      prompt = `Provides suggestions based on the CONTEXT.
+        - The first 2 suggestions must be directly relevant to the current CONTEXT.
+        - The third suggestion should be a 'discovery' action. It introduces a related but broader Rancher or Kubernetes topic, helping the user learn.
+        Examples: 1: How do I scale the deployment? 2: Check the resource usage for the cluster 3: Show me the logs for the failing pod`;
+    }
+
+    try {
+      welcomeMessage.tools = await fetchUIToolsCalls({
+        prompt,
+        context: selectedContext.value,
+        tools:   {
+          name:  toolsSelector.value.name,
+          tools: [ToolName.Suggestions]
+        }
+      });
+    } catch (err) {
+      warn('Failed to fetch UI tools calls for the Welcome message:', err);
+    } finally {
+      welcomeMessage.completed = true;
+
+      setProcessingState({ phase: MessagePhase.Idle });
+    }
+  }
+
+  async function processMessageData(ws: WebSocket, data: string) {
+    switch (data) {
+    case Tag.MessageStart:
+      setProcessingState({ phase: MessagePhase.Working });
+
+      const msgId = await addMessage(buildMessage(agentName.value));
+
+      currentMsg.value = getMessage(msgId);
+      break;
+    case Tag.ThinkingStart: {
+      setProcessingState({ phase: MessagePhase.Thinking });
+      currentMsg.value.thinking = true;
+      break;
+    }
+    case Tag.ThinkingEnd: {
+      setProcessingState({ phase: MessagePhase.GeneratingResponse });
+      currentMsg.value.thinking = false;
+      break;
+    }
+    case Tag.MessageEnd:
+      setProcessingState({ phase: MessagePhase.Idle });
+      currentMsg.value.messageContent = currentMsg.value.messageContent?.replace(/[\r\n]+$/, '');
+      currentMsg.value.thinking = false;
+      currentMsg.value.completed = true;
+
+      await ensureSwitchAgentSuggestion(currentMsg.value.agentMetadata?.recommended);
+
+      break;
+    default:
+      setProcessingState({ phase: MessagePhase.GeneratingResponse });
+
+      if (data.startsWith(Tag.ProcessingSubagentInitStart) && data.endsWith(Tag.ProcessingSubagentInitEnd)) {
+        const metadata = formatSubAgentProcessingMetadata(data);
+
+        const agent = agents.value.find((a) => a.name === metadata?.name);
+
+        const agentName = agent?.displayName || metadata?.name;
+
+        if (metadata && agentName) {
+          setProcessingState({
+            phase: MessagePhase.ProcessingSubagent,
+            label: `${ agentName }: ${ metadata.query?.slice(0, 100) || t('aiChat.processing.label.default') }`
+          });
+        }
+        break;
+      }
+
+      if (data.startsWith(Tag.ProcessingSubagentCompleteStart) && data.endsWith(Tag.ProcessingSubagentCompleteEnd)) {
+        break;
+      }
+
+      if (data.startsWith(Tag.AgentMetadataStart) && data.endsWith(Tag.AgentMetadataEnd)) {
+        const metadata = formatAgentMetadata(data);
+
+        if (metadata && currentMsg.value.agentMetadata) {
+          currentMsg.value.agentMetadata.recommended = metadata.recommended;
+        }
+        break;
+      }
+
+      if (data.startsWith(Tag.AuthenticationRequestStart) && data.endsWith(Tag.AuthenticationRequestEnd)) {
+        const metadata = formatMcpAuthenticationRequest(data);
+
+        if (!metadata || !validateUrl(metadata.url)) {
+          throw {
+            message: t('aiChat.error.oauth2.invalidMetadata'),
+            key:     'message'
+          };
+        }
+
+        await ensureAgentMcpAuthenticationRequest(ws, agents.value, metadata);
+
+        setProcessingState({
+          phase: MessagePhase.AwaitingConfirmation,
+          label: t('aiChat.processing.label.authenticationRequired')
+        });
+
+        break;
+      }
+
+      if (data.startsWith(Tag.TokenRefreshRequestStart) && data.endsWith(Tag.TokenRefreshRequestEnd)) {
+        const agentName = formatMcpRefreshTokenRequest(data);
+
+        if (agentName) {
+          await refreshMcpAuthenticationToken(agentName);
+
+          wsSend(ws, McpTokenRefreshResponse.Confirm);
+
+          setProcessingState({ phase: MessagePhase.RefreshingMcpToken });
+        }
+
+        break;
+      }
+
+      if (currentMsg.value.completed === false && currentMsg.value.thinking === true) {
+        if (!currentMsg.value.thinkingContent && data.trim() === '') {
+          break;
+        }
+        currentMsg.value.thinkingContent += data;
+        break;
+      }
+
+      if (currentMsg.value.completed === false && currentMsg.value.thinking === false) {
+        if (!currentMsg.value.messageContent && data.trim() === '') {
+          break;
+        }
+
+        if (data.startsWith(Tag.McpResultStart) && data.endsWith(Tag.McpResultEnd)) {
+          setProcessingState({ phase: MessagePhase.Finalizing });
+
+          const relatedResourcesActions = formatMessageRelatedResourcesActions(data);
+
+          if (!currentMsg.value.relatedResourcesActions) {
+            currentMsg.value.relatedResourcesActions = [];
+          }
+          currentMsg.value.relatedResourcesActions.push(...relatedResourcesActions);
+          break;
+        }
+
+        if (data.startsWith(Tag.ConfirmationStart) && data.endsWith(Tag.ConfirmationEnd)) {
+          const confirmationActions = formatConfirmationActions(data);
+
+          if (confirmationActions) {
+            currentMsg.value.confirmation = {
+              actions: confirmationActions,
+              status:  ConfirmationStatus.Pending,
+            };
+            currentMsg.value.thinking = false;
+            currentMsg.value.completed = true;
+
+            break;
+          }
+        }
+
+        if (data.startsWith(Tag.DocLinkStart) && data.endsWith(Tag.DocLinkEnd)) {
+          currentMsg.value.sourceLinks = formatSourceLinks(currentMsg.value.sourceLinks || [], data);
+
+          break;
+        }
+
+        if (data.startsWith(Tag.ErrorStart) && data.endsWith(Tag.ErrorEnd)) {
+          const err = formatErrorMessage(data);
+
+          throw {
+            message: err.message,
+            key:     'message'
+          };
+        }
+
+        if (data.startsWith(Tag.AuthenticationErrorStart) && data.endsWith(Tag.AuthenticationErrorEnd)) {
+          const err = formatAuthenticationErrorMessage(data);
+
+          throw {
+            message: err.message,
+            key:     'authentication'
+          };
+        }
+
+        if (data === Tag.ProcessingTools) {
+          setProcessingState({ phase: MessagePhase.ProcessingTools });
+
+          break;
+        }
+
+        currentMsg.value.messageContent += data;
+
+        if (currentMsg.value.messageContent?.includes(Tag.ToolsStart) && currentMsg.value.messageContent?.includes(Tag.ToolsEnd)) {
+          const { tools, remaining } = formatTools(currentMsg.value.tools || [], currentMsg.value.messageContent);
+
+          currentMsg.value.tools = tools;
+          currentMsg.value.messageContent = remaining;
+
+          break;
+        }
+
+        break;
+      }
+      break;
+    }
+  }
+
+  function processMessageErrorData(error: ChatError) {
+    setProcessingState({ phase: MessagePhase.Idle });
+
+    const prefix = t(`aiChat.error.${ error.key || 'message' }`, {}, true);
+
+    addMessage({
+      role:           Role.System,
+      messageContent: `${ prefix } ${ error.message || '' }`,
+      timestamp:      new Date(),
+      completed:      true,
+      source:         MessageInternalSource.Error,
+    });
+  }
+
+  function downloadMessages() {
+    downloadFile(
+      `AI-Chat-${ chatId }_${ new Date().toISOString().slice(0, 10) }.txt`,
+      formatFileMessages(principal, messages.value)
+    );
+  }
+
+  function loadMessages(messages: Message[]) {
+    store.commit('rancher-ai-chat/chat/loadMessages', {
+      chatId,
+      messages
+    });
+  }
+
+  function resetMessages() {
+    store.commit('rancher-ai-chat/chat/resetMessages', chatId);
+  }
+
+  function resetChatMetadata(args: { chatId: string | null } = { chatId: null }) {
+    store.commit('rancher-ai-chat/chat/setMetadata', {
+      chatId:      args.chatId,
+      agents:      null,
+      storageType: null
+    });
+  }
+
+  function setErrors(error: ChatError | null = null) {
+    store.commit('rancher-ai-chat/chat/setError', {
+      chatId,
+      error,
+    });
+  }
+
+  function clearMessageBox() {
+    store.commit('rancher-ai-chat/chat/clearMessageBox', chatId);
+  }
+
+  onMounted(() => {
+    store.dispatch('rancher-ai-chat/chat/init', {
+      chatId,
+      messages: hasPermissions.value ? [] : [buildNoPermissionMessage()]
+    });
+  });
+
+  onBeforeUnmount(() => {
+    AuthenticationHandler.abortPendingRequests();
+  });
+
+  return {
+    onopen,
+    onmessage,
+    onclose,
+    messages,
+    messageBox,
+    sendMessage,
+    addMessage,
+    updateMessage,
+    confirmMessage,
+    selectContext,
+    downloadMessages,
+    loadMessages,
+    resetMessages,
+    clearMessageBox,
+    chatMetadata,
+    isChatInitialized,
+    resetChatMetadata,
+    processingState,
+    error,
+    resetErrors: () => setErrors(null),
+  };
+}
