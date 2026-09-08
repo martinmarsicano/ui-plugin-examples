@@ -12,6 +12,26 @@ entries:
       catalog.cattle.io/ui-component: plugins
       catalog.cattle.io/ui-extensions-version: '>= 3.0.0 < 4.0.0'
     apiVersion: v2
+    appVersion: 0.2.1
+    created: "2026-09-08T18:19:06.871659792Z"
+    description: Percona Everest object viewer
+    digest: d475e606400e2e669041ab86449a795ff08cded0858138e515fc2c924202d7b4
+    name: everest
+    type: application
+    urls:
+    - assets/everest/everest-0.2.1.tgz
+    version: 0.2.1
+  - annotations:
+      catalog.cattle.io/certified: rancher
+      catalog.cattle.io/kube-version: '>= 1.16.0-0'
+      catalog.cattle.io/namespace: cattle-ui-plugin-system
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/permits-os: linux, windows
+      catalog.cattle.io/rancher-version: '>= 2.10.0-0'
+      catalog.cattle.io/scope: management
+      catalog.cattle.io/ui-component: plugins
+      catalog.cattle.io/ui-extensions-version: '>= 3.0.0 < 4.0.0'
+    apiVersion: v2
     appVersion: 0.2.0
     created: "2026-09-08T17:32:27.285196559Z"
     description: Percona Everest object viewer
@@ -144,4 +164,4 @@ entries:
     urls:
     - assets/traefik/traefik-0.1.0.tgz
     version: 0.1.0
-generated: "2026-09-08T17:40:46.677447979Z"
+generated: "2026-09-08T18:19:06.871276704Z"
