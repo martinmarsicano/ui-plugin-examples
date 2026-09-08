@@ -37,10 +37,12 @@ export function init($plugin: any, store: any) {
 
   // ── Top-level product definition ──
   product({
-    icon:    'globe',
-    inStore: 'cluster',
-    weight:  96,
-    to:      {
+    // Hide the product when this cluster does not expose Everest's landing resource.
+    ifHaveType: DATABASE_CLUSTER,
+    icon:       'globe',
+    inStore:    'cluster',
+    weight:     96,
+    to:         {
       name:   `${ PRODUCT_NAME }-c-cluster-resource`,
       params: {
         product:  PRODUCT_NAME,
