@@ -41,6 +41,28 @@ entries:
     urls:
     - assets/everest/everest-0.1.0.tgz
     version: 0.1.0
+  rancher-ai-chat:
+  - annotations:
+      catalog.cattle.io/certified: rancher
+      catalog.cattle.io/display-name: AI Chat
+      catalog.cattle.io/namespace: cattle-ui-plugin-system
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/permits-os: linux, windows
+      catalog.cattle.io/rancher-version: '>= 2.13.0'
+      catalog.cattle.io/scope: management
+      catalog.cattle.io/ui-component: plugins
+      catalog.cattle.io/ui-extensions-version: '>= 3.0.0 < 4.0.0'
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-09-08T17:40:46.678585856Z"
+    description: AI chat and tools for Rancher
+    digest: 48aa26c2e986c8372dffb41b5547280f0abe5f30f7f11957bd1710180fa2c6d8
+    icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSI+CiAgPHJlY3QgeD0iNSIgeT0iOCIgd2lkdGg9IjU0IiBoZWlnaHQ9IjQyIiByeD0iMTMiIGZpbGw9IiMyNTYzZWIiLz4KICA8cGF0aCBkPSJNMTYgNDd2MTFsMTQtMTEiIGZpbGw9IiMyNTYzZWIiLz4KICA8cGF0aCBkPSJtMzQgMTYgMy41IDEwLjVMNDggMzBsLTEwLjUgMy41TDM0IDQ0bC0zLjUtMTAuNUwyMCAzMGwxMC41LTMuNUwzNCAxNloiIGZpbGw9IiNmZmYiLz4KICA8Y2lyY2xlIGN4PSIxNyIgY3k9IjE5IiByPSIzIiBmaWxsPSIjOTNjNWZkIi8+Cjwvc3ZnPgo=
+    name: rancher-ai-chat
+    type: application
+    urls:
+    - assets/rancher-ai-chat/rancher-ai-chat-0.1.0.tgz
+    version: 0.1.0
   traefik:
   - annotations:
       catalog.cattle.io/certified: rancher
@@ -122,4 +144,4 @@ entries:
     urls:
     - assets/traefik/traefik-0.1.0.tgz
     version: 0.1.0
-generated: "2026-09-08T17:32:27.284130162Z"
+generated: "2026-09-08T17:40:46.677447979Z"
