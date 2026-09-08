@@ -1,0 +1,10 @@
+plugin/everest-0.2.0.umd.min.37.js
+plugin/everest-0.2.0.umd.min.37.js.map
+plugin/everest-0.2.0.umd.min.59.js
+plugin/everest-0.2.0.umd.min.59.js.map
+plugin/everest-0.2.0.umd.min.60.js
+plugin/everest-0.2.0.umd.min.60.js.map
+plugin/everest-0.2.0.umd.min.js
+plugin/everest-0.2.0.umd.min.js.map
+plugin/img/harvester.20240f8a.png
+plugin/package.json
