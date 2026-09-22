@@ -17,7 +17,11 @@ export default class IngressRoute extends SteveModel {
       return routes[0]?.match || '';
     }
 
-    return `${ routes[0]?.match || '' } (+${ routes.length - 1 } more)`;
+    var routesText = '';
+    for (const route of routes) {
+      routesText += `${ route?.match || '' } + \n`;
+    }
+    return `${ routesText.trim() }`;
   }
 
   get destinationText() {
@@ -41,6 +45,10 @@ export default class IngressRoute extends SteveModel {
       return destinations[0];
     }
 
-    return `${ destinations[0] } (+${ destinations.length - 1 } more)`;
+    var destinationsText = '';
+    for (const destination of destinations) {
+      destinationsText += `${ destination } `;
+    }
+    return `${ destinationsText.trim() }`;
   }
 }
